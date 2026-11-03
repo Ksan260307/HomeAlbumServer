@@ -1,0 +1,25 @@
+{
+  "name": "home-album-server",
+  "version": "1.0.0",
+  "description": "家庭内ネットワーク向けの写真・動画アルバムサーバー",
+  "private": true,
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ksan260307/HomeAlbumServer.git"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "busboy": "^1.6.0",
+    "express": "^4.22.3",
+    "qrcode": "^1.5.4",
+    "sharp": "^0.35.5"
+  }
+}
