@@ -4,6 +4,9 @@
   'use strict';
 
   var CHUNK = 60; // 一度に並べる写真の数
+  var PRELOAD = 3; // スライドショーで先に読み込んでおく枚数
+  // 写真は画面に合った大きさに縮めたものをもらう (古いタブレットでも軽く、通信も少なくて済む)
+  var SCREEN_PX = Math.round(Math.max(screen.width, screen.height) * Math.min(window.devicePixelRatio || 1, 2));
 
   function $(id) { return document.getElementById(id); }
 
@@ -248,13 +251,14 @@
     img.onerror = function () {
       if (viewer.open && state.files[viewer.index] === f) stage.innerHTML = '<div class="v-loading">表示できませんでした</div>';
     };
-    img.src = mediaUrl('preview', state.album, path, { v: version(f) });
+    img.src = mediaUrl('preview', state.album, path, { w: SCREEN_PX, v: version(f) });
     preload(viewer.index + 1);
+    preload(viewer.index + 2);
   }
 
   function preload(index) {
     var f = state.files[index % state.files.length];
-    if (f && f.type === 'image') new Image().src = mediaUrl('preview', state.album, joinPath(state.path, f.name), { v: version(f) });
+    if (f && f.type === 'image') new Image().src = mediaUrl('preview', state.album, joinPath(state.path, f.name), { w: SCREEN_PX, v: version(f) });
   }
 
   $('vClose').onclick = function () { closeViewer(false); };
@@ -385,7 +389,7 @@
     flashUi();
   }
 
-  function slideUrl(item) { return mediaUrl('preview', item.album, item.path, { v: item.v }); }
+  function slideUrl(item) { return mediaUrl('preview', item.album, item.path, { w: SCREEN_PX, v: item.v }); }
 
   function showSlide() {
     clearTimeout(slide.timer);
@@ -399,8 +403,10 @@
       if (slide.front && slide.front !== next) slide.front.className = 's-img';
       slide.front = next;
       $('sInfo').textContent = (slide.pos + 1) + ' / ' + slide.list.length + '　' + item.name;
-      // 次の写真を先に読み込んでおく
-      new Image().src = slideUrl(slide.list[(slide.pos + 1) % slide.list.length]);
+      // 次の数枚を先に読み込んでおく (サーバーでの縮小も先に済むので、切り替えで待たない)
+      for (var k = 1; k <= Math.min(PRELOAD, slide.list.length - 1); k++) {
+        new Image().src = slideUrl(slide.list[(slide.pos + k) % slide.list.length]);
+      }
       schedule();
     };
     next.onerror = function () {

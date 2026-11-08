@@ -85,8 +85,15 @@ app.get('/api/list', async (req, res) => {
   }
 });
 
+// アドレスに v (更新日時とサイズ) が付いていれば、写真が変わるとアドレスも変わるので、
+// ブラウザに1年間覚えさせて、同じ写真を何度もサーバーへ取りに来ないようにする
+const LONG_CACHE = 'private, max-age=31536000, immutable';
+function cacheHeader(req, fallback) {
+  return req.query.v ? LONG_CACHE : fallback;
+}
+
 function sendCached(res, file) {
-  res.setHeader('Cache-Control', 'private, max-age=604800');
+  res.setHeader('Cache-Control', cacheHeader(res.req, 'private, max-age=604800'));
   res.sendFile(file, { dotfiles: 'allow' });
 }
 
@@ -202,18 +209,21 @@ app.get('/api/file', async (req, res) => {
   }
   // .mov (H.264) は video/mp4 として渡すと多くのブラウザで再生できる
   if (/\.(mov|m4v)$/i.test(t.abs)) res.type('video/mp4');
-  res.setHeader('Cache-Control', 'private, max-age=3600');
+  res.setHeader('Cache-Control', cacheHeader(req, 'private, max-age=3600'));
   res.sendFile(t.abs, { dotfiles: 'allow' });
 });
 
 // ブラウザで表示できない画像形式を JPEG に変換して表示
+// w を付けると、画面に合った大きさ (1280 / 1920 / 2560) に縮めて渡す (スライドショー・かんたん版用)
 app.get('/api/preview', async (req, res) => {
   const t = target(req, res);
   if (!t) return;
   const st = await statFile(t.abs);
   if (!st || files.mediaType(t.abs) !== 'image') return res.status(404).end();
+  const want = Number(req.query.w) || Infinity; // w がなければいちばん大きいもの
+  const size = thumbs.PREVIEW_SIZES.find((s) => s >= want) || thumbs.PREVIEW_SIZES[thumbs.PREVIEW_SIZES.length - 1];
   try {
-    const out = await thumbs.previewImage(t.abs, st, () => req.destroyed);
+    const out = await thumbs.previewImage(t.abs, st, () => req.destroyed, size);
     if (out) return sendCached(res, out);
   } catch { /* 下で 415 */ }
   if (!res.headersSent) res.status(415).end();

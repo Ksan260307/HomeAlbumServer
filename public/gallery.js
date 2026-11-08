@@ -170,7 +170,14 @@ const itemName = (it) => it.path.split('/').pop();
 const itemFolder = (it) => it.path.split('/').slice(0, -1).join('/');
 const isHeifName = (name) => /\.(heic|heif)$/i.test(name);
 const gFileUrl = (it) => `/api/file?${itemQs(it)}&v=${itemVer(it)}`;
-const gDisplayUrl = (it) => (it.type === 'video' || it.viewable ? gFileUrl(it) : `/api/preview?${itemQs(it)}&v=${itemVer(it)}`);
+// 印刷などで使う、元の画質の画像
+const gFullUrl = (it) => (it.type === 'video' || it.viewable ? gFileUrl(it) : `/api/preview?${itemQs(it)}&v=${itemVer(it)}`);
+// スライドショーで見せる画像は、画面に合った大きさに縮めたものを使う
+// (元の写真は 1枚 数MB あり、通信も端末の負担も大きいため。動くことがある GIF だけは元のまま)
+const SCREEN_PX = Math.max(screen.width, screen.height) * Math.min(window.devicePixelRatio || 1, 2);
+const gDisplayUrl = (it) => (it.type === 'video' || /\.gif$/i.test(it.path)
+  ? gFullUrl(it)
+  : `/api/preview?${itemQs(it)}&w=${Math.round(SCREEN_PX)}&v=${itemVer(it)}`);
 const gThumbUrl = (it) => `/api/thumb?${qs({ album: it.album, path: it.path, v: itemVer(it) })}`;
 const currentItem = () => gal.current[0]?.item || null;
 
@@ -550,11 +557,17 @@ async function showSlide(pos, { dir = 1, instant = false } = {}) {
   preloadNext();
 }
 
+// 次の3枚を先に読み込んでおく (サーバーでの縮小も先に済むので、切り替えで待たない)
+const PRELOAD_COUNT = 3;
 function preloadNext() {
-  const it = gal.items[gal.order[gal.nextPos]];
-  if (it && it.type === 'image') {
-    loadMeta(it);
-    new Image().src = gDisplayUrl(it);
+  const n = gal.order.length;
+  if (!n) return;
+  for (let k = 0; k < Math.min(PRELOAD_COUNT, n); k++) {
+    const it = gal.items[gal.order[(gal.nextPos + k) % n]];
+    if (it && it.type === 'image') {
+      loadMeta(it);
+      new Image().src = gDisplayUrl(it);
+    }
   }
 }
 
@@ -1032,7 +1045,7 @@ function downloadItem(it) {
 }
 
 function printItem(it) {
-  const job = { items: [{ url: gDisplayUrl(it), name: itemName(it), mtime: it.mtime }] };
+  const job = { items: [{ url: gFullUrl(it), name: itemName(it), mtime: it.mtime }] };
   try {
     sessionStorage.setItem('homealbum.printJob', JSON.stringify(job));
   } catch {
