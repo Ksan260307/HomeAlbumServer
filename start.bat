@@ -24,6 +24,9 @@ if not exist "node_modules" (
     pause
     exit /b 1
   )
+) else (
+  rem After an update, install any newly added components (failures are ignored so the app still starts offline)
+  call npm install --omit=dev --no-audit --no-fund >nul 2>nul
 )
 
 node server.js --open

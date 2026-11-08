@@ -13,6 +13,7 @@ const { writeZip } = require('./lib/zip');
 const { moveToTrash } = require('./lib/trash');
 const { isPrivate, isAllowedHost, lanAddresses } = require('./lib/network');
 const { createAdminRouter } = require('./lib/admin');
+const QRCode = require('qrcode');
 
 config.load();
 
@@ -134,13 +135,28 @@ app.get('/api/gallery', async (req, res) => {
     sources = [{ ...t, rel: t.rel.split(/[\\/]+/).filter(Boolean).join('/') }];
   }
   const LIMIT = 50000;
+  const videos = req.query.videos === '1';
   const items = [];
   for (const s of sources) {
     const list = [];
-    await files.collectImages(s.abs, s.rel, list, { recursive, limit: LIMIT - items.length });
+    await files.collectMedia(s.abs, s.rel, list, { recursive, videos, limit: LIMIT - items.length });
     for (const item of list) items.push({ album: s.album.id, ...item });
   }
-  res.json({ albums: Object.fromEntries(sources.map((s) => [s.album.id, s.album.name])), items });
+  // スマホで写真を開く QRコード・フォトフレーム用アドレスのために、このPCのアドレスも返す
+  const ip = lanAddresses()[0];
+  res.json({
+    albums: Object.fromEntries(sources.map((s) => [s.album.id, s.album.name])),
+    items,
+    lanUrl: ip ? `http://${ip}:${listeningPort}/` : '',
+  });
+});
+
+// アドレスを QRコード (SVG) にする。このアプリのアドレス (http) のみ受け付ける
+app.get('/api/qr', async (req, res) => {
+  const text = String(req.query.text || '');
+  if (!/^https?:\/\/[^\s]+$/.test(text) || text.length > 1500) return res.status(400).end();
+  res.setHeader('Cache-Control', 'private, max-age=86400');
+  res.type('image/svg+xml').send(await QRCode.toString(text, { type: 'svg', margin: 1, width: 240 }));
 });
 
 // フォルダの表紙
@@ -172,6 +188,15 @@ app.get('/api/file', async (req, res) => {
   if (!t) return;
   const st = await statFile(t.abs);
   if (!st || !files.mediaType(t.abs)) return res.status(404).json({ error: 'ファイルが見つかりません' });
+  // HEIC/HEIF は format=jpg で JPEG に変換して渡す (多くの端末やブラウザは HEIC を開けないため)
+  if (req.query.format === 'jpg' && /\.(heic|heif)$/i.test(t.abs)) {
+    let jpg = null;
+    try { jpg = await thumbs.fullJpeg(t.abs, st, () => req.destroyed); } catch { /* 下で 415 */ }
+    if (!jpg) return res.status(415).json({ error: 'JPEG に変換できませんでした' });
+    const jpgName = path.basename(t.abs).replace(/\.[^.]+$/, '.jpg');
+    if (req.query.dl === '1') return res.download(jpg, jpgName, { dotfiles: 'allow' });
+    return sendCached(res, jpg);
+  }
   if (req.query.dl === '1') {
     return res.download(t.abs, path.basename(t.abs), { dotfiles: 'allow' });
   }
@@ -199,13 +224,32 @@ app.post('/api/zip', express.urlencoded({ extended: false, limit: '5mb' }), asyn
   const t = target(req, res);
   if (!t) return;
   const names = [].concat(req.body.names || []).map(String);
+  const convertHeic = req.body.convert === 'jpg';
   const entries = [];
   const used = new Set();
+  const usedNames = new Set();
   for (const name of names) {
     const abs = files.resolveInAlbum(t.album, path.posix.join(t.rel.replace(/\\/g, '/'), name));
     const st = abs && await statFile(abs);
     if (!st || !files.mediaType(abs) || used.has(abs)) continue;
     used.add(abs);
+    if (convertHeic && /\.(heic|heif)$/i.test(abs)) {
+      // 同じ名前の JPEG がすでにある場合は「名前 (1).jpg」にする
+      const stem = path.basename(abs).replace(/\.[^.]+$/, '');
+      let name = `${stem}.jpg`;
+      for (let i = 1; usedNames.has(name.toLowerCase()) || names.includes(name); i++) name = `${stem} (${i}).jpg`;
+      usedNames.add(name.toLowerCase());
+      entries.push({
+        name, mtime: st.mtimeMs,
+        prepare: async () => {
+          const jpg = await thumbs.fullJpeg(abs, st);
+          if (!jpg) throw new Error('convert failed');
+          return { abs: jpg, size: (await fsp.stat(jpg)).size };
+        },
+      });
+      continue;
+    }
+    usedNames.add(path.basename(abs).toLowerCase());
     entries.push({ abs, name: path.basename(abs), size: st.size, mtime: st.mtimeMs });
   }
   if (!entries.length) return res.status(400).type('text/plain; charset=utf-8').send('ダウンロードするファイルがありません。');

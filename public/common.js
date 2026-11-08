@@ -73,8 +73,10 @@ function toast(message, { error = false, duration = 3000 } = {}) {
     el = document.createElement('div');
     el.id = 'toast';
     el.setAttribute('role', 'status');
-    document.body.append(el);
   }
+  // 全画面表示中は、全画面にしている要素の中に出さないと見えない
+  const host = document.fullscreenElement || document.body;
+  if (el.parentElement !== host) host.append(el);
   el.className = 'toast' + (error ? ' error' : '');
   el.textContent = message;
   el.hidden = false;
@@ -149,7 +151,7 @@ function showMenu(anchor, items) {
   menu.setAttribute('role', 'menu');
   menu.innerHTML = items.map((it, i) => `
     <button role="menuitem" data-i="${i}" class="${it.danger ? 'danger' : ''}">${it.icon ? icon(it.icon) : ''}<span>${esc(it.label)}</span></button>`).join('');
-  document.body.append(menu);
+  (document.fullscreenElement || document.body).append(menu);
   const r = anchor.getBoundingClientRect();
   const w = menu.offsetWidth;
   menu.style.top = `${r.bottom + 6}px`;

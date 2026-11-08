@@ -3,7 +3,7 @@ const $ = (id) => document.getElementById(id);
 const els = {
   main: $('main'), title: $('title'), actions: $('actions'), back: $('backBtn'),
   selbar: $('selbar'), selcount: $('selcount'), selAll: $('selAll'), selDownload: $('selDownload'),
-  selPrint: $('selPrint'), selRename: $('selRename'), selDelete: $('selDelete'), selCancel: $('selCancel'),
+  selPrint: $('selPrint'), selGallery: $('selGallery'), selRename: $('selRename'), selDelete: $('selDelete'), selCancel: $('selCancel'),
   viewer: $('viewer'), vStage: $('vStage'), vName: $('vName'), vPos: $('vPos'),
   vClose: $('vClose'), vEdit: $('vEdit'), vDownload: $('vDownload'), vMore: $('vMore'), vPrev: $('vPrev'), vNext: $('vNext'),
   upload: $('uploadInput'),
@@ -227,6 +227,16 @@ async function renderAlbum(albumId, path, { keepScroll = false } = {}) {
     setupGridEvents();
   }
   if (keepScroll) window.scrollTo(0, scrollY);
+  if (state.pendingOpen) {
+    // ギャラリーや QRコードから指定された写真を開く
+    const name = state.pendingOpen;
+    state.pendingOpen = null;
+    const i = state.items.findIndex((f) => f.name === name);
+    if (i >= 0) {
+      while (state.rendered <= i) renderMore();
+      openViewer(i);
+    }
+  }
 }
 
 function computeItems() {
@@ -470,6 +480,8 @@ function updateSelbar() {
   els.selAll.textContent = allSelected ? '選択を解除' : 'すべて選択';
   els.selPrint.innerHTML = `${icon('print')}印刷`;
   els.selPrint.disabled = !state.items.some((f) => f.type === 'image' && state.selected.has(f.name));
+  els.selGallery.innerHTML = `${icon('gallery')}ギャラリー`;
+  els.selGallery.disabled = n === 0;
   els.selRename.hidden = !edit || n !== 1;
   els.selDelete.hidden = !edit;
   els.selDelete.disabled = n === 0;
@@ -492,6 +504,22 @@ els.selDownload.onclick = () => downloadFiles([...state.selected]);
 els.selDelete.onclick = () => deleteFiles([...state.selected]);
 els.selRename.onclick = () => renameFile([...state.selected][0]);
 els.selPrint.onclick = () => printFiles([...state.selected]);
+els.selGallery.onclick = () => {
+  // 選んだ写真だけでギャラリーを始める
+  const names = state.items.filter((f) => state.selected.has(f.name)).map((f) => f.name);
+  exitSelection();
+  openGallery({ album: state.album.id, path: state.path, names });
+};
+
+// 指定した写真をアルバムで開く (ギャラリーや QRコードから)
+function openInAlbum(albumId, filePath) {
+  const parts = filePath.split('/');
+  state.pendingOpen = parts.pop();
+  state.filter = 'all';
+  const hash = albumHash(albumId, parts.join('/'));
+  if (location.hash === hash) route();
+  else location.hash = hash;
+}
 
 // ---- 印刷 ----
 
@@ -515,12 +543,18 @@ function printFiles(names) {
 
 // ---- ダウンロード ----
 
+const isHeif = (name) => /\.(heic|heif)$/i.test(name);
+
 function downloadFiles(names) {
   if (!names.length) return;
+  // HEIC は iPhone 以外では開けないことが多いので、いつも JPEG に変換して保存する
+  const toJpeg = names.some(isHeif);
   if (names.length === 1) {
+    const convert = isHeif(names[0]);
     const a = document.createElement('a');
-    a.href = fileUrl(names[0], true);
-    a.download = names[0];
+    a.href = fileUrl(names[0], true) + (convert ? '&format=jpg' : '');
+    a.download = convert ? names[0].replace(/\.[^.]+$/, '.jpg') : names[0];
+    if (convert) toast('JPEGに変換しています。まもなくダウンロードが始まります', { duration: 5000 });
     document.body.append(a);
     a.click();
     a.remove();
@@ -539,6 +573,7 @@ function downloadFiles(names) {
   add('album', state.album.id);
   add('path', state.path);
   names.forEach((n) => add('names', n));
+  if (toJpeg) add('convert', 'jpg');
   document.body.append(form);
   form.submit();
   form.remove();
@@ -726,7 +761,8 @@ els.vEdit.onclick = () => {
   const f = state.items[state.viewerIndex];
   openEditor({
     album: state.album.id, path: joinPath(state.path, f.name), name: f.name,
-    url: f.viewable ? fileUrl(f.name) : previewUrl(f),
+    // HEIC は元の大きさの JPEG に変換したものを編集する
+    url: isHeif(f.name) ? `${fileUrl(f.name)}&format=jpg` : f.viewable ? fileUrl(f.name) : previewUrl(f),
     allowUpload: state.album.allowUpload, allowEdit: state.album.allowEdit,
   });
 };
@@ -799,4 +835,10 @@ window.addEventListener('popstate', () => {
   if (!els.viewer.hidden && !history.state?.viewer) closeViewer(true);
 });
 window.addEventListener('hashchange', route);
+// スマホで読み取った QRコードなどから ?open=写真の名前 で開かれたら、その写真を表示する
+const startParams = new URLSearchParams(location.search);
+if (startParams.get('open')) {
+  state.pendingOpen = startParams.get('open');
+  history.replaceState(null, '', location.pathname + location.hash);
+}
 route();

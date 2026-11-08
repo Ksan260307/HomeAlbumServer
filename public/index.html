@@ -23,6 +23,7 @@
     <button class="btn" id="selAll">すべて選択</button>
     <button class="btn primary" id="selDownload"></button>
     <button class="btn" id="selPrint"></button>
+    <button class="btn" id="selGallery"></button>
     <button class="btn" id="selRename" hidden>名前を変更</button>
     <button class="btn danger" id="selDelete" hidden>削除</button>
     <button class="btn" id="selCancel">やめる</button>
@@ -41,35 +42,7 @@
     <button class="v-nav v-next" id="vNext" aria-label="次へ"></button>
   </div>
 
-  <div class="gallery" id="gallery" hidden>
-    <div class="g-layer" id="gLayer0"><div class="g-bg"></div><img alt=""></div>
-    <div class="g-layer" id="gLayer1"><div class="g-bg"></div><img alt=""></div>
-    <div class="g-loading" id="gLoading"><div class="spinner"></div></div>
-    <div class="g-top">
-      <button class="btn icon" id="gClose" title="ギャラリーを終わる" aria-label="ギャラリーを終わる"></button>
-      <div class="g-caption"><div id="gWhere"></div><small id="gCount"></small></div>
-    </div>
-    <div class="g-bar">
-      <div class="g-group">
-        <button class="btn icon" id="gPrev" title="前へ" aria-label="前へ"></button>
-        <button class="btn icon g-play" id="gPlay" title="再生／一時停止" aria-label="再生／一時停止"></button>
-        <button class="btn icon" id="gNext" title="次へ" aria-label="次へ"></button>
-      </div>
-      <div class="g-group">
-        <select class="select g-select" id="gInterval" aria-label="切り替えの間隔">
-          <option value="3">3秒ごと</option>
-          <option value="5">5秒ごと</option>
-          <option value="10">10秒ごと</option>
-          <option value="30">30秒ごと</option>
-          <option value="60">1分ごと</option>
-        </select>
-        <button class="btn g-toggle" id="gShuffle" aria-pressed="false"></button>
-        <button class="btn g-toggle" id="gRecursive" aria-pressed="true"></button>
-        <button class="btn icon" id="gFull" title="全画面" aria-label="全画面"></button>
-      </div>
-    </div>
-    <div class="g-progress" id="gProgress"></div>
-  </div>
+  <div class="gallery" id="gallery" hidden></div>
 
   <div class="editor" id="editor" hidden>
     <div class="e-top">
