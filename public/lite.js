@@ -307,8 +307,9 @@
   });
 
   // ---- スライドショー ----
-  var slide = { open: false, list: [], pos: 0, timer: null, paused: false, front: null, uiTimer: null, interval: 10 };
+  var slide = { open: false, list: [], pos: 0, timer: null, paused: false, front: null, uiTimer: null, interval: 10, sound: false, token: 0, fails: 0 };
   var setupStart = 0;
+  var sV = $('sV');
 
   function openSlideSetup(startIndex) {
     setupStart = startIndex || 0;
@@ -316,40 +317,69 @@
     $('ssInterval').value = String(saved.interval || 10);
     $('ssOrder').value = saved.order || 'name';
     $('ssSub').checked = !!saved.sub;
+    $('ssVideo').checked = !!saved.video;
+    $('ssSound').checked = !!saved.sound;
     // 1枚表示からはこのフォルダだけ、トップ画面からは全アルバムの全フォルダ
     $('ssSub').parentNode.hidden = viewer.open || !state.album;
     $('ssTitle').textContent = state.album ? 'スライドショー' : 'すべての写真でスライドショー';
+    updateSoundRow();
     $('slideSetup').hidden = false;
+  }
+
+  function updateSoundRow() { $('ssSound').parentNode.hidden = !$('ssVideo').checked; }
+  $('ssVideo').onchange = updateSoundRow;
+
+  function playVideo() {
+    try {
+      var p = sV.play();
+      if (p && p.catch) p.catch(function () { /* 再生が止められた (下でタップを待つ) */ });
+    } catch (e) { /* 同上 */ }
+  }
+
+  // 古いブラウザは、画面を触ったときでないと動画を再生させない。
+  // 「はじめる」を押したときに一度再生しておくと、そのあとはこの動画の枠で自動再生できる
+  function unlockVideo() {
+    sV.muted = true;
+    try { sV.load(); } catch (e) { /* 何もしない */ }
+    playVideo();
   }
 
   $('slideBtn').onclick = function () { openSlideSetup(0); };
   $('ssCancel').onclick = function () { $('slideSetup').hidden = true; };
   $('ssStart').onclick = function () {
-    var opts = { interval: Number($('ssInterval').value), order: $('ssOrder').value, sub: $('ssSub').checked };
+    var opts = {
+      interval: Number($('ssInterval').value), order: $('ssOrder').value, sub: $('ssSub').checked,
+      video: $('ssVideo').checked, sound: $('ssSound').checked,
+    };
     store('slide', opts);
     $('slideSetup').hidden = true;
+    if (opts.video) unlockVideo();
+    var wanted = function (type) { return type === 'image' || (opts.video && type === 'video'); };
     var all = !state.album;
+    var list = [];
     if (all || (opts.sub && !viewer.open)) {
-      showMessageInSlide('写真を集めています…');
+      showMessageInSlide(opts.video ? '写真と動画を集めています…' : '写真を集めています…');
       var query = all ? { album: 'all', recursive: 1 } : { album: state.album, path: state.path, recursive: 1 };
+      if (opts.video) query.videos = 1;
       getJSON('/api/gallery?' + qs(query), function (data) {
-        var list = [];
         var names = data.albums || {};
         for (var i = 0; i < data.items.length; i++) {
           var it = data.items[i];
-          if (it.type !== 'image') continue;
-          list.push({ album: it.album, path: it.path, v: it.mtime + '-' + it.size, name: all ? (names[it.album] || '') + ' / ' + it.path : it.path });
+          if (!wanted(it.type)) continue;
+          list.push({
+            album: it.album, path: it.path, type: it.type, v: it.mtime + '-' + it.size,
+            name: all ? (names[it.album] || '') + ' / ' + it.path : it.path,
+          });
         }
         startSlide(list, 0, opts);
       }, function (msg) { stopSlide(false); alert(msg); });
     } else {
-      var list = [];
       var start = 0;
       for (var i = 0; i < state.files.length; i++) {
         var f = state.files[i];
-        if (f.type !== 'image') continue;
+        if (!wanted(f.type)) continue;
         if (i === setupStart) start = list.length;
-        list.push({ album: state.album, path: joinPath(state.path, f.name), v: version(f), name: f.name });
+        list.push({ album: state.album, path: joinPath(state.path, f.name), type: f.type, v: version(f), name: f.name });
       }
       startSlide(list, start, opts);
     }
@@ -372,7 +402,11 @@
   }
 
   function startSlide(list, start, opts) {
-    if (!list.length) { stopSlide(false); alert('スライドショーで流せる写真がありません。'); return; }
+    if (!list.length) {
+      stopSlide(false);
+      alert(opts.video ? 'スライドショーで流せる写真や動画がありません。' : 'スライドショーで流せる写真がありません。');
+      return;
+    }
     if (opts.order === 'shuffle') {
       var first = list.splice(start, 1)[0];
       list = [first].concat(shuffle(list));
@@ -382,7 +416,9 @@
     slide.list = list;
     slide.pos = start;
     slide.interval = opts.interval;
+    slide.sound = !!opts.sound;
     slide.paused = false;
+    slide.fails = 0;
     $('sPause').textContent = 'Ⅱ 一時停止';
     slide.front = null;
     showSlide();
@@ -390,52 +426,114 @@
   }
 
   function slideUrl(item) { return mediaUrl('preview', item.album, item.path, { w: SCREEN_PX, v: item.v }); }
+  function videoUrl(item) { return mediaUrl('file', item.album, item.path, { v: item.v }); }
+  function current() { return slide.list[slide.pos]; }
+
+  function showInfo(item) {
+    $('sInfo').textContent = (slide.pos + 1) + ' / ' + slide.list.length + '　' + item.name;
+  }
+
+  // 次の数枚の写真を先に読み込んでおく (サーバーでの縮小も先に済むので、切り替えで待たない)
+  function preloadAhead() {
+    for (var k = 1; k <= Math.min(PRELOAD, slide.list.length - 1); k++) {
+      var it = slide.list[(slide.pos + k) % slide.list.length];
+      if (it.type !== 'video') new Image().src = slideUrl(it);
+    }
+  }
+
+  function advance() {
+    slide.pos = (slide.pos + 1) % slide.list.length;
+    showSlide();
+  }
+
+  // 表示・再生できないものは飛ばす (すべてだめなら止まる)
+  function skip() {
+    if (++slide.fails > slide.list.length) {
+      $('sInfo').textContent = '表示できる写真や動画がありませんでした';
+      flashUi();
+      return;
+    }
+    advance();
+  }
 
   function showSlide() {
     clearTimeout(slide.timer);
     if (!slide.open) return;
-    var item = slide.list[slide.pos];
+    var token = ++slide.token;
+    var item = current();
+    $('sHint').hidden = true;
+    if (item.type === 'video') { showVideo(item, token); return; }
+    hideVideo();
     var next = slide.front === $('sA') ? $('sB') : $('sA');
-    var tries = 0;
     next.onload = function () {
-      if (!slide.open) return;
+      if (!slide.open || token !== slide.token) return;
+      slide.fails = 0;
       next.className = 's-img on';
       if (slide.front && slide.front !== next) slide.front.className = 's-img';
       slide.front = next;
-      $('sInfo').textContent = (slide.pos + 1) + ' / ' + slide.list.length + '　' + item.name;
-      // 次の数枚を先に読み込んでおく (サーバーでの縮小も先に済むので、切り替えで待たない)
-      for (var k = 1; k <= Math.min(PRELOAD, slide.list.length - 1); k++) {
-        new Image().src = slideUrl(slide.list[(slide.pos + k) % slide.list.length]);
-      }
+      showInfo(item);
+      preloadAhead();
       schedule();
     };
-    next.onerror = function () {
-      // 表示できない写真は飛ばす
-      if (++tries > slide.list.length) return;
-      slide.pos = (slide.pos + 1) % slide.list.length;
-      item = slide.list[slide.pos];
-      next.src = slideUrl(item);
-    };
+    next.onerror = function () { if (token === slide.token) skip(); };
     next.src = slideUrl(item);
+  }
+
+  function hideVideo() {
+    if (!/\bon\b/.test(sV.className)) return;
+    sV.pause();
+    sV.className = 's-video';
+  }
+
+  function showVideo(item, token) {
+    var started = false;
+    if (slide.front) { slide.front.className = 's-img'; slide.front = null; }
+    sV.onplaying = function () {
+      if (token !== slide.token) return;
+      started = true;
+      slide.fails = 0;
+      $('sHint').hidden = true;
+      preloadAhead();
+    };
+    sV.onended = function () { if (token === slide.token && !slide.paused) advance(); };
+    sV.onerror = function () { if (token === slide.token) skip(); };
+    // 映像を再生できない形式 (最近の iPhone の HEVC など) は飛ばす
+    sV.onloadedmetadata = function () { if (token === slide.token && !sV.videoWidth) skip(); };
+    sV.muted = !slide.sound;
+    sV.src = videoUrl(item);
+    sV.className = 's-video on';
+    showInfo(item);
+    if (!slide.paused) playVideo();
+    // 自動で再生が始まらないとき (古いブラウザの制限など) は、タップを案内して、しばらく待ってから飛ばす
+    slide.timer = setTimeout(function () {
+      if (token !== slide.token || started || slide.paused) return;
+      $('sHint').hidden = false;
+      slide.timer = setTimeout(function () {
+        if (token === slide.token && !started && !slide.paused) skip();
+      }, 15000);
+    }, 5000);
   }
 
   function schedule() {
     clearTimeout(slide.timer);
     if (slide.paused) return;
-    slide.timer = setTimeout(function () {
-      slide.pos = (slide.pos + 1) % slide.list.length;
-      showSlide();
-    }, slide.interval * 1000);
+    slide.timer = setTimeout(advance, slide.interval * 1000);
   }
 
   function stopSlide(fromHistory) {
     if (!slide.open) return;
     slide.open = false;
+    slide.token++;
     clearTimeout(slide.timer);
     clearTimeout(slide.uiTimer);
     $('slide').hidden = true;
+    $('sHint').hidden = true;
     $('sA').removeAttribute('src');
     $('sB').removeAttribute('src');
+    sV.pause();
+    sV.className = 's-video';
+    sV.removeAttribute('src');
+    try { sV.load(); } catch (e) { /* 読み込みを止めるだけなので失敗してもよい */ }
     $('sInfo').textContent = '';
     exitFull();
     if (!fromHistory && history.state && history.state.liteSlide) history.back();
@@ -450,6 +548,12 @@
 
   $('slide').addEventListener('click', function (e) {
     if (e.target.tagName === 'BUTTON') return;
+    // 動画の自動再生が止められていたら、このタップで再生する
+    if (!$('sHint').hidden) {
+      $('sHint').hidden = true;
+      playVideo();
+      return;
+    }
     if (/\bnoui\b/.test($('slide').className)) flashUi();
     else { clearTimeout(slide.uiTimer); $('slide').className = 'slide noui'; }
   });
@@ -457,8 +561,16 @@
   $('sPause').onclick = function () {
     slide.paused = !slide.paused;
     this.textContent = slide.paused ? '▶ 再生' : 'Ⅱ 一時停止';
-    if (slide.paused) clearTimeout(slide.timer);
-    else schedule();
+    var item = current();
+    if (item && item.type === 'video') {
+      if (slide.paused) sV.pause();
+      else if (sV.ended) advance();
+      else playVideo();
+    } else if (slide.paused) {
+      clearTimeout(slide.timer);
+    } else {
+      schedule();
+    }
     flashUi();
   };
 

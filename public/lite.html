@@ -51,6 +51,8 @@
         </select>
       </label>
       <label class="check"><input type="checkbox" id="ssSub"> 中のフォルダの写真も流す</label>
+      <label class="check"><input type="checkbox" id="ssVideo"> 動画も流す（最後まで再生してから次へ）</label>
+      <label class="check sub"><input type="checkbox" id="ssSound"> 動画の音を出す</label>
       <div class="actions">
         <button class="btn" id="ssCancel" type="button">やめる</button>
         <button class="btn primary" id="ssStart" type="button">はじめる</button>
@@ -61,6 +63,8 @@
   <div id="slide" class="slide" hidden>
     <img class="s-img" id="sA" alt="">
     <img class="s-img" id="sB" alt="">
+    <video class="s-video" id="sV" preload="auto" playsinline webkit-playsinline></video>
+    <div class="s-hint" id="sHint" hidden>画面をタップすると動画を再生します</div>
     <div class="s-ui ui">
       <button class="btn dark" id="sClose" type="button">✕ 終了</button>
       <button class="btn dark" id="sPause" type="button">Ⅱ 一時停止</button>
