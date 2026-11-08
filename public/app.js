@@ -635,37 +635,99 @@ async function createFolder() {
   }
 }
 
-function uploadFiles(fileList) {
+// 1件ずつ送る。サーバーが受け付けなかった場合 (4xx) はやり直さない
+function sendUpload(file, album, path, onProgress) {
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    // 名前のないファイル (Android の Google フォトなど) も送れるように仮の名前を付ける
+    form.append('files', file, file.name || 'upload');
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `/api/upload?${qs({ album, path })}`);
+    xhr.setRequestHeader('X-HomeAlbum', '1');
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded); };
+    xhr.onload = () => {
+      let res = {};
+      try { res = JSON.parse(xhr.responseText); } catch { /* 下で処理 */ }
+      if (xhr.status === 200) resolve(res);
+      else reject(Object.assign(new Error(res.error || 'アップロードに失敗しました'), { fatal: xhr.status >= 400 && xhr.status < 500 }));
+    };
+    xhr.onerror = () => reject(new Error('network'));
+    xhr.onabort = () => reject(new Error('abort'));
+    xhr.send(form);
+  });
+}
+
+let uploading = false;
+
+async function uploadFiles(fileList) {
   const list = [...fileList];
   if (!list.length || !state.album?.allowUpload) return;
-  const form = new FormData();
-  list.forEach((f) => form.append('files', f, f.name));
-  const xhr = new XMLHttpRequest();
-  xhr.open('POST', `/api/upload?${qs({ album: state.album.id, path: state.path })}`);
-  xhr.setRequestHeader('X-HomeAlbum', '1');
-  xhr.upload.onprogress = (e) => {
-    if (e.lengthComputable) toast(`アップロード中… ${Math.floor((e.loaded / e.total) * 100)}%`, { duration: 0 });
+  if (uploading) {
+    toast('アップロード中です。終わってからもう一度お試しください', { error: true });
+    return;
+  }
+  uploading = true;
+  const album = state.album.id;
+  const path = state.path;
+  const total = list.reduce((sum, f) => sum + f.size, 0) || 1;
+  const result = { saved: [], skipped: [], failed: [] };
+  let sent = 0;
+  let fatalError = null;
+  const progress = (i, loaded) => {
+    const pct = Math.min(99, Math.floor(((sent + loaded) / total) * 100));
+    toast(`アップロード中… ${i + 1} / ${list.length}件（${pct}%）`, { duration: 0 });
   };
-  xhr.onload = async () => {
-    let res = {};
-    try { res = JSON.parse(xhr.responseText); } catch { /* 下で処理 */ }
-    if (xhr.status !== 200) {
-      toast(res.error || 'アップロードに失敗しました', { error: true });
-      return;
+  for (let i = 0; i < list.length; i++) {
+    const file = list[i];
+    const label = file.name || '(名前なし)';
+    progress(i, 0);
+    if (file.size === 0) {
+      // Google フォトでスマホに保存されていない写真などは、中身が空で渡されることがある
+      result.failed.push(label);
+      continue;
     }
-    const skipped = res.skipped?.length ? `（${res.skipped.length}件は写真・動画ではないため追加しませんでした）` : '';
-    toast(`${res.saved.length}件を追加しました${skipped}`, { duration: 5000 });
-    await reloadAlbum();
-  };
-  xhr.onerror = () => toast('アップロードに失敗しました。通信状況を確認してください', { error: true });
-  toast('アップロード中… 0%', { duration: 0 });
-  xhr.send(form);
+    // 通信が途切れたときなどに備えて、1回だけやり直す
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const res = await sendUpload(file, album, path, (loaded) => progress(i, loaded));
+        result.saved.push(...(res.saved || []));
+        result.skipped.push(...(res.skipped || []));
+        result.failed.push(...(res.failed || []));
+        break;
+      } catch (e) {
+        if (e.fatal) { fatalError = e.message; break; }
+        if (attempt === 2) result.failed.push(label);
+      }
+    }
+    if (fatalError) break;
+    sent += file.size;
+  }
+  uploading = false;
+  if (fatalError) {
+    toast(fatalError, { error: true, duration: 6000 });
+  } else if (!result.skipped.length && !result.failed.length) {
+    toast(`${result.saved.length}件を追加しました`, { duration: 5000 });
+  } else {
+    const toastEl = document.getElementById('toast');
+    if (toastEl) toastEl.hidden = true;
+    const lines = [`追加できたもの：${result.saved.length}件`];
+    if (result.skipped.length) lines.push(`写真・動画ではないため追加しなかったもの：${result.skipped.length}件`);
+    if (result.failed.length) {
+      lines.push(`読み込めなかったもの：${result.failed.length}件（${result.failed.slice(0, 3).join('、')}${result.failed.length > 3 ? ' など' : ''}）`);
+      lines.push('Google フォトの写真の場合は、Google フォトで写真を開いて「ダウンロード」してスマホに保存してから、もう一度選んでください。');
+    }
+    await showDialog({ title: 'アップロードの結果', message: lines.join('\n'), okText: 'OK', cancelText: '' });
+  }
+  if (result.saved.length && state.album?.id === album && state.path === path) await reloadAlbum();
 }
 
 els.upload.onchange = () => {
   uploadFiles(els.upload.files);
   els.upload.value = '';
 };
+// Android では拡張子 (.heic など) を指定すると、Google フォトを選べる写真選択画面ではなく
+// ファイル選択画面が開く機種があるため、種類だけを指定する (HEIC も image/* に含まれる)
+if (/Android/i.test(navigator.userAgent)) els.upload.accept = 'image/*,video/*';
 
 // PC ではファイルをドラッグ＆ドロップして追加できる
 window.addEventListener('dragover', (e) => {

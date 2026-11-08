@@ -278,39 +278,46 @@ app.post('/api/upload', (req, res) => {
   }
   const jobs = [];
   const saved = [];
-  const skipped = [];
+  const skipped = []; // 写真・動画ではなかったもの
+  const failed = []; // 受け取れなかったもの (中身が空・途中で切れた など)
   bb.on('file', (field, stream, info) => {
-    const name = files.cleanName(info.filename);
-    if (!name || !files.mediaType(name)) {
-      skipped.push(info.filename);
-      stream.resume();
-      return;
-    }
+    const label = info.filename || '(名前なし)';
     jobs.push((async () => {
-      const dest = await files.uniquePath(t.abs, name);
+      // いったん一時ファイルに保存してから、名前と種類を決める
+      // (拡張子のない名前でも、ファイルの種類や中身から写真・動画かどうかを判断できるようにする)
       const tmp = path.join(t.abs, `.uploading-${Date.now()}-${Math.random().toString(36).slice(2)}`);
       try {
-        await new Promise((resolve, reject) => {
+        const bytes = await new Promise((resolve, reject) => {
           const ws = fs.createWriteStream(tmp);
           stream.on('error', reject);
           ws.on('error', reject);
-          ws.on('finish', resolve);
+          ws.on('finish', () => resolve(ws.bytesWritten));
           stream.pipe(ws);
         });
-        if (stream.truncated) throw new Error('truncated');
-        const finalDest = await files.uniquePath(t.abs, path.basename(dest));
-        await fsp.rename(tmp, finalDest);
-        saved.push(path.basename(finalDest));
+        if (stream.truncated || bytes === 0) {
+          failed.push(label);
+          await fsp.rm(tmp, { force: true });
+          return;
+        }
+        const name = await files.uploadName(info.filename, info.mimeType, tmp);
+        if (!name) {
+          skipped.push(label);
+          await fsp.rm(tmp, { force: true });
+          return;
+        }
+        const dest = await files.uniquePath(t.abs, name);
+        await fsp.rename(tmp, dest);
+        saved.push(path.basename(dest));
       } catch {
         stream.resume();
         await fsp.rm(tmp, { force: true }).catch(() => {});
-        skipped.push(info.filename);
+        failed.push(label);
       }
     })());
   });
   bb.on('close', async () => {
     await Promise.all(jobs);
-    res.json({ saved, skipped });
+    res.json({ saved, skipped, failed });
   });
   bb.on('error', () => {
     if (!res.headersSent) res.status(400).json({ error: 'アップロードに失敗しました' });
@@ -448,6 +455,8 @@ function openBrowser(url) {
 
 function listen(port, attemptsLeft = 10) {
   const server = app.listen(port);
+  // 大きな動画などのアップロードが途中で切られないよう、通信全体の時間制限 (標準 5 分) をなくす
+  server.requestTimeout = 0;
   server.on('listening', () => {
     listeningPort = port;
     printBanner(port);
