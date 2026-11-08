@@ -50,7 +50,9 @@ function publicAlbum(a) {
 
 // album と path クエリから対象を解決する
 function target(req, res, { requireEdit = false, requireUpload = false } = {}) {
-  const src = req.method === 'GET' ? req.query : { ...req.query, ...req.body };
+  // 画像データ (Buffer) が本文のときは、本文をパラメーターとして扱わない
+  const body = req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body) ? req.body : {};
+  const src = req.method === 'GET' ? req.query : { ...req.query, ...body };
   const album = config.findAlbum(String(src.album || ''));
   if (!album) { res.status(404).json({ error: 'アルバムが見つかりません' }); return null; }
   if (requireEdit && !album.allowEdit) { res.status(403).json({ error: 'このフォルダは閲覧専用です' }); return null; }
@@ -323,6 +325,50 @@ app.post('/api/delete', async (req, res) => {
     res.json({ ok: true, count: paths.length });
   } catch {
     res.status(500).json({ error: '削除できませんでした' });
+  }
+});
+
+// 編集した画像の保存。mode=copy は別名で保存 (アップロード許可が必要)、
+// mode=overwrite は元の画像をごみ箱へ移してから同じ名前で保存 (削除・名前変更の許可が必要)
+const EDIT_FORMATS = [
+  { ext: '.jpg', exts: ['.jpg', '.jpeg'], magic: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+  { ext: '.png', exts: ['.png'], magic: (b) => b.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47])) },
+  { ext: '.webp', exts: ['.webp'], magic: (b) => b.subarray(0, 4).toString() === 'RIFF' && b.subarray(8, 12).toString() === 'WEBP' },
+];
+
+app.post('/api/save-edit', express.raw({ type: 'image/*', limit: '300mb' }), async (req, res) => {
+  const overwrite = req.query.mode === 'overwrite';
+  const t = target(req, res, overwrite ? { requireEdit: true } : { requireUpload: true });
+  if (!t) return;
+  const st = await statFile(t.abs);
+  if (!st || files.mediaType(t.abs) !== 'image') return res.status(404).json({ error: '元の写真が見つかりません' });
+  const data = req.body;
+  const format = Buffer.isBuffer(data) && data.length > 12 && EDIT_FORMATS.find((f) => f.magic(data));
+  if (!format) return res.status(400).json({ error: '画像の形式が正しくありません' });
+
+  const dir = path.dirname(t.abs);
+  const origExt = path.extname(t.abs);
+  if (overwrite && !format.exts.includes(origExt.toLowerCase())) {
+    return res.status(400).json({ error: 'この形式の写真は上書きできません。別名で保存してください' });
+  }
+  const tmp = path.join(dir, `.uploading-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  try {
+    await fsp.writeFile(tmp, data);
+    let dest;
+    if (overwrite) {
+      await moveToTrash([t.abs], path.resolve(t.album.path));
+      dest = t.abs;
+    } else {
+      const stem = path.basename(t.abs, origExt);
+      dest = await files.uniquePath(dir, `${stem}_編集${format.ext}`);
+    }
+    await fsp.rename(tmp, dest);
+    // 一覧で元の写真と同じ日付の位置に並ぶよう、更新日時を元の写真に合わせる
+    await fsp.utimes(dest, new Date(), st.mtime).catch(() => {});
+    res.json({ ok: true, name: path.basename(dest) });
+  } catch {
+    await fsp.rm(tmp, { force: true }).catch(() => {});
+    res.status(500).json({ error: '保存できませんでした' });
   }
 });
 

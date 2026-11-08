@@ -91,7 +91,7 @@ async function renderDashboard() {
         <div class="access">
           <div class="qr"><img alt="QRコード" src="/api/admin/qr?url=${encodeURIComponent(url)}"></div>
           <div class="urls">
-            ${cfg.urls.map((u, i) => `<div class="url-row"><code>${esc(u)}</code>${i === 0 ? '<button class="btn" id="copyBtn">コピー</button>' : ''}</div>`).join('')}
+            ${cfg.urls.map((u, i) => `<div class="url-row"><code>${esc(u)}</code>${i === 0 ? `<button class="btn" id="copyBtn">コピー</button><button class="btn" id="qrPrintBtn">${icon('print')}QRコードを印刷</button>` : ''}</div>`).join('')}
           </div>
         </div>` : '<p>このPCがネットワークにつながっていないようです。Wi-Fi や LAN ケーブルの接続を確認してください。</p>'}
     </section>
@@ -116,6 +116,8 @@ async function renderDashboard() {
 
   renderAlbums(cfg.albums);
   document.getElementById('addBtn').onclick = openPicker;
+  const qrPrintBtn = document.getElementById('qrPrintBtn');
+  if (qrPrintBtn) qrPrintBtn.onclick = () => openQrPrint(url);
   const copyBtn = document.getElementById('copyBtn');
   if (copyBtn) {
     copyBtn.onclick = async () => {
@@ -210,6 +212,102 @@ function renderAlbums(albums) {
     }
   };
 }
+
+// ---- QRコードの印刷 ----
+
+function loadQrPrefs() {
+  try { return JSON.parse(localStorage.getItem('homealbum.qrPrint')) || {}; } catch { return {}; }
+}
+
+function openQrPrint(url) {
+  const prefs = { layout: 'large', title: 'ホームアルバム', wifi: '', ...loadQrPrefs() };
+  const dlg = document.createElement('dialog');
+  dlg.innerHTML = `
+    <form method="dialog" style="display:grid;gap:14px">
+      <div><h2>QRコードを印刷</h2><p style="margin:0">冷蔵庫や棚に貼っておくと、家族や来た人がスマホで読み取るだけでアルバムを開けます。</p></div>
+      <div class="field"><label>印刷のしかた</label>
+        <div class="seg" style="width:100%">
+          <button type="button" data-v="large" style="flex:1">大きく1枚（A4）</button>
+          <button type="button" data-v="cards" style="flex:1">カード8枚（切り取り用）</button>
+        </div>
+      </div>
+      <div class="field"><label for="qrTitle">見出し</label><input class="input" id="qrTitle" maxlength="30" value="${esc(prefs.title)}"></div>
+      <div class="field"><label for="qrWifi">つなぐWi-Fiの名前（書かなくてもOK）</label><input class="input" id="qrWifi" maxlength="40" placeholder="例：MyHome-WiFi" value="${esc(prefs.wifi)}"></div>
+      <div class="actions">
+        <button class="btn" value="cancel">キャンセル</button>
+        <button class="btn primary" value="ok">${icon('print')}印刷する</button>
+      </div>
+    </form>`;
+  document.body.append(dlg);
+  let layout = prefs.layout;
+  const segBtns = dlg.querySelectorAll('.seg button');
+  const syncSeg = () => segBtns.forEach((b) => b.classList.toggle('on', b.dataset.v === layout));
+  segBtns.forEach((b) => { b.onclick = () => { layout = b.dataset.v; syncSeg(); }; });
+  syncSeg();
+  dlg.addEventListener('close', () => {
+    const title = dlg.querySelector('#qrTitle').value.trim() || 'ホームアルバム';
+    const wifi = dlg.querySelector('#qrWifi').value.trim();
+    const ok = dlg.returnValue === 'ok';
+    dlg.remove();
+    if (!ok) return;
+    try { localStorage.setItem('homealbum.qrPrint', JSON.stringify({ layout, title, wifi })); } catch { /* 保存できなくても印刷はできる */ }
+    printQr({ url, layout, title, wifi });
+  });
+  dlg.showModal();
+}
+
+function printQr({ url, layout, title, wifi }) {
+  document.getElementById('qrPrint')?.remove();
+  const qr = `/api/admin/qr?url=${encodeURIComponent(url)}`;
+  const steps = [
+    wifi ? `スマホを Wi-Fi「${esc(wifi)}」につなぐ` : 'スマホを家の Wi-Fi につなぐ',
+    'カメラアプリで QRコードを読み取る',
+    '表示されたリンクを開く',
+  ];
+  const root = document.createElement('div');
+  root.id = 'qrPrint';
+  if (layout === 'cards') {
+    const card = `
+      <div class="qr-card">
+        <img src="${qr}" alt="">
+        <div class="qr-card-text">
+          <div class="qr-card-title">${esc(title)}</div>
+          <div class="qr-card-sub">スマホのカメラで読み取ってください</div>
+          ${wifi ? `<div class="qr-card-wifi">Wi-Fi：${esc(wifi)}</div>` : ''}
+          <div class="qr-card-url">${esc(url)}</div>
+        </div>
+      </div>`;
+    root.innerHTML = `<div class="qr-sheet qr-cards">${card.repeat(8)}</div>`;
+  } else {
+    root.innerHTML = `
+      <div class="qr-sheet qr-large">
+        <div class="qr-title">${esc(title)}</div>
+        <div class="qr-lead">家族の写真と動画が見られます</div>
+        <img class="qr-img" src="${qr}" alt="">
+        <ol class="qr-steps">${steps.map((t) => `<li>${t}</li>`).join('')}</ol>
+        <div class="qr-url">QRコードが読み取れないときは、ブラウザに次のアドレスを入力してください<br><strong>${esc(url)}</strong></div>
+        <div class="qr-note">※ 家の中（同じ Wi-Fi）でだけ見られます。パソコンでアプリが起動しているときに使えます。</div>
+      </div>`;
+  }
+  document.body.append(root);
+  let pageStyle = document.getElementById('qrPageStyle');
+  if (!pageStyle) {
+    pageStyle = document.createElement('style');
+    pageStyle.id = 'qrPageStyle';
+    document.head.append(pageStyle);
+  }
+  pageStyle.textContent = '@page { size: 210mm 297mm; margin: 0; }';
+  const imgs = [...root.querySelectorAll('img')];
+  Promise.all(imgs.map((img) => (img.complete ? null : new Promise((r) => { img.onload = r; img.onerror = r; })))).then(() => {
+    document.body.classList.add('printing-qr');
+    window.print();
+  });
+}
+
+window.addEventListener('afterprint', () => {
+  document.body.classList.remove('printing-qr');
+  document.getElementById('qrPrint')?.remove();
+});
 
 // ---- フォルダ選択ダイアログ ----
 

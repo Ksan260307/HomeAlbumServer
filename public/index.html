@@ -22,6 +22,7 @@
     <span class="selcount" id="selcount">0件を選択中</span>
     <button class="btn" id="selAll">すべて選択</button>
     <button class="btn primary" id="selDownload"></button>
+    <button class="btn" id="selPrint"></button>
     <button class="btn" id="selRename" hidden>名前を変更</button>
     <button class="btn danger" id="selDelete" hidden>削除</button>
     <button class="btn" id="selCancel">やめる</button>
@@ -31,9 +32,9 @@
     <div class="v-top">
       <button class="btn icon" id="vClose" title="閉じる" aria-label="閉じる"></button>
       <div class="v-title"><div class="fname" id="vName"></div><small id="vPos"></small></div>
-      <button class="btn icon" id="vGallery" title="ここからギャラリーで見る" aria-label="ここからギャラリーで見る"></button>
+      <button class="btn has-optional" id="vEdit" title="編集"></button>
       <button class="btn has-optional" id="vDownload" title="ダウンロード"></button>
-      <button class="btn icon" id="vDelete" title="削除" aria-label="削除" hidden></button>
+      <button class="btn icon" id="vMore" title="その他" aria-label="その他"></button>
     </div>
     <button class="v-nav v-prev" id="vPrev" aria-label="前へ"></button>
     <div class="v-stage" id="vStage"></div>
@@ -70,9 +71,40 @@
     <div class="g-progress" id="gProgress"></div>
   </div>
 
+  <div class="editor" id="editor" hidden>
+    <div class="e-top">
+      <button class="btn" id="eCancel">キャンセル</button>
+      <div class="e-title">編集</div>
+      <button class="btn" id="eReset">リセット</button>
+      <button class="btn primary" id="eSave">保存</button>
+    </div>
+    <div class="e-stage" id="eStage">
+      <div class="e-wrap" id="eWrap">
+        <canvas id="eCanvas"></canvas>
+        <div class="e-crop" id="eCrop" hidden>
+          <div class="e-handle" data-h="nw"></div><div class="e-handle" data-h="ne"></div>
+          <div class="e-handle" data-h="sw"></div><div class="e-handle" data-h="se"></div>
+        </div>
+      </div>
+      <div class="e-loading" id="eLoading"><div class="spinner"></div></div>
+    </div>
+    <div class="e-bottom">
+      <div class="e-panel" id="ePanel"></div>
+      <div class="e-tabs" id="eTabs">
+        <button data-tab="filter" type="button">フィルター</button>
+        <button data-tab="adjust" type="button">調整</button>
+        <button data-tab="crop" type="button">切り抜き</button>
+        <button data-tab="pen" type="button">ペン</button>
+        <button data-tab="stamp" type="button">スタンプ</button>
+      </div>
+    </div>
+  </div>
+
   <input type="file" id="uploadInput" multiple accept="image/*,video/*,.heic,.heif" hidden>
   <script src="common.js"></script>
   <script src="app.js"></script>
   <script src="gallery.js"></script>
+  <script src="editor-marks.js"></script>
+  <script src="editor.js"></script>
 </body>
 </html>

@@ -274,5 +274,5 @@ document.addEventListener('keydown', (e) => {
   showGalleryUi();
 });
 
-window.addEventListener('popstate', () => { if (!g.el.hidden) closeGallery(true); });
+window.addEventListener('popstate', () => { if (!g.el.hidden && !history.state?.gallery) closeGallery(true); });
 window.addEventListener('hashchange', () => closeGallery(true));

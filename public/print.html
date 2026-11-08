@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>印刷 - ホームアルバム</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <style id="pageStyle"></style>
+</head>
+<body class="print-page">
+  <header class="topbar">
+    <button class="btn icon" id="backBtn" title="戻る" aria-label="戻る"></button>
+    <h1>印刷</h1>
+    <button class="btn primary" id="printBtn" disabled></button>
+  </header>
+
+  <div class="print-layout">
+    <aside class="print-settings" id="settings"></aside>
+    <section class="print-preview">
+      <div class="print-info" id="info"></div>
+      <div id="sheets"></div>
+    </section>
+  </div>
+
+  <script src="common.js"></script>
+  <script src="print.js"></script>
+</body>
+</html>

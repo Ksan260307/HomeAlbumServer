@@ -25,6 +25,13 @@ const ICON_PATHS = {
   gallery: '<rect x="2" y="4" width="20" height="14" rx="2"/><path d="M10 8.5v5l4-2.5z" fill="currentColor"/><path d="M8 21h8"/>',
   layers: '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>',
   drive: '<rect x="3" y="13" width="18" height="7" rx="2"/><path d="M5 13l2-8h10l2 8M7 16.5h.01"/>',
+  wand: '<path d="M15 4V2M15 16v-2M8 9h2M20 9h2M17.8 11.8l1.4 1.4M17.8 6.2l1.4-1.4M12.2 6.2l-1.4-1.4M3 21l9-9"/>',
+  print: '<path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M6 14h12v7H6z"/>',
+  more: '<circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/>',
+  rotateL: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
+  rotateR: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
+  flipH: '<path d="M12 3v18"/><path d="M8 7l-5 5 5 5z"/><path d="M16 7l5 5-5 5z"/>',
+  flipV: '<path d="M3 12h18"/><path d="M7 8l5-5 5 5z"/><path d="M7 16l5 5 5-5z"/>',
 };
 
 function icon(name) {
@@ -104,4 +111,65 @@ function showDialog({ title, message = '', input = null, okText = 'OK', cancelTe
       else field.select();
     }
   });
+}
+
+// 選択肢ダイアログ。選んだ value を返す (キャンセルなら null)
+// choices: [{ value, label, description, primary, danger }]
+function showChoices({ title, message = '', choices }) {
+  return new Promise((resolve) => {
+    const dlg = document.createElement('dialog');
+    dlg.innerHTML = `
+      <form method="dialog">
+        <h2>${esc(title)}</h2>
+        ${message ? `<p>${esc(message)}</p>` : ''}
+        <div class="choices">
+          ${choices.map((c) => `
+            <button class="choice${c.primary ? ' primary' : ''}${c.danger ? ' danger' : ''}" value="${esc(c.value)}" type="submit">
+              <span class="c-label">${esc(c.label)}</span>
+              ${c.description ? `<span class="c-desc">${esc(c.description)}</span>` : ''}
+            </button>`).join('')}
+        </div>
+        <div class="actions"><button class="btn" value="" type="submit">キャンセル</button></div>
+      </form>`;
+    document.body.append(dlg);
+    dlg.addEventListener('close', () => {
+      const v = dlg.returnValue;
+      dlg.remove();
+      resolve(v || null);
+    });
+    dlg.showModal();
+  });
+}
+
+// ボタンの近くに出るメニュー。items: [{ label, icon, danger, onClick }]
+function showMenu(anchor, items) {
+  document.querySelector('.menu-pop')?.remove();
+  const menu = document.createElement('div');
+  menu.className = 'menu-pop';
+  menu.setAttribute('role', 'menu');
+  menu.innerHTML = items.map((it, i) => `
+    <button role="menuitem" data-i="${i}" class="${it.danger ? 'danger' : ''}">${it.icon ? icon(it.icon) : ''}<span>${esc(it.label)}</span></button>`).join('');
+  document.body.append(menu);
+  const r = anchor.getBoundingClientRect();
+  const w = menu.offsetWidth;
+  menu.style.top = `${r.bottom + 6}px`;
+  menu.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w))}px`;
+  const close = () => {
+    menu.remove();
+    document.removeEventListener('pointerdown', outside, true);
+    document.removeEventListener('keydown', onKey, true);
+  };
+  const outside = (e) => { if (!menu.contains(e.target)) close(); };
+  const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  menu.onclick = (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    close();
+    items[Number(b.dataset.i)].onClick();
+  };
+  setTimeout(() => {
+    document.addEventListener('pointerdown', outside, true);
+    document.addEventListener('keydown', onKey, true);
+  });
+  menu.querySelector('button')?.focus();
 }

@@ -3,9 +3,9 @@ const $ = (id) => document.getElementById(id);
 const els = {
   main: $('main'), title: $('title'), actions: $('actions'), back: $('backBtn'),
   selbar: $('selbar'), selcount: $('selcount'), selAll: $('selAll'), selDownload: $('selDownload'),
-  selRename: $('selRename'), selDelete: $('selDelete'), selCancel: $('selCancel'),
+  selPrint: $('selPrint'), selRename: $('selRename'), selDelete: $('selDelete'), selCancel: $('selCancel'),
   viewer: $('viewer'), vStage: $('vStage'), vName: $('vName'), vPos: $('vPos'),
-  vClose: $('vClose'), vGallery: $('vGallery'), vDownload: $('vDownload'), vDelete: $('vDelete'), vPrev: $('vPrev'), vNext: $('vNext'),
+  vClose: $('vClose'), vEdit: $('vEdit'), vDownload: $('vDownload'), vMore: $('vMore'), vPrev: $('vPrev'), vNext: $('vNext'),
   upload: $('uploadInput'),
 };
 
@@ -27,9 +27,16 @@ function savePref(key, value) {
 const joinPath = (...parts) => parts.filter(Boolean).join('/');
 const qs = (o) => new URLSearchParams(o).toString();
 const albumHash = (id, p = '') => '#/a/' + [id, ...p.split('/').filter(Boolean)].map(encodeURIComponent).join('/');
-const fileUrl = (name, dl) => `/api/file?${qs({ album: state.album.id, path: joinPath(state.path, name) })}${dl ? '&dl=1' : ''}`;
-const thumbUrl = (f) => `/api/thumb?${qs({ album: state.album.id, path: joinPath(state.path, f.name), v: f.mtime })}`;
-const previewUrl = (f) => `/api/preview?${qs({ album: state.album.id, path: joinPath(state.path, f.name), v: f.mtime })}`;
+// 上書き保存などで中身が変わったら URL も変わるように、更新日時とサイズを付ける
+// (編集した写真は更新日時を元のままにするため、サイズも使う)
+const version = (f) => `${f.mtime}-${f.size}`;
+const fileVersion = (name) => {
+  const f = state.data?.files.find((x) => x.name === name);
+  return f ? `&v=${version(f)}` : '';
+};
+const fileUrl = (name, dl) => `/api/file?${qs({ album: state.album.id, path: joinPath(state.path, name) })}${dl ? '&dl=1' : fileVersion(name)}`;
+const thumbUrl = (f) => `/api/thumb?${qs({ album: state.album.id, path: joinPath(state.path, f.name), v: version(f) })}`;
+const previewUrl = (f) => `/api/preview?${qs({ album: state.album.id, path: joinPath(state.path, f.name), v: version(f) })}`;
 const extOf = (name) => (name.match(/\.([^.]+)$/) || [, ''])[1].toUpperCase();
 
 function formatDate(ms, withTime = true) {
@@ -461,6 +468,8 @@ function updateSelbar() {
   els.selDownload.disabled = n === 0;
   const allSelected = state.items.length > 0 && state.items.every((f) => state.selected.has(f.name));
   els.selAll.textContent = allSelected ? '選択を解除' : 'すべて選択';
+  els.selPrint.innerHTML = `${icon('print')}印刷`;
+  els.selPrint.disabled = !state.items.some((f) => f.type === 'image' && state.selected.has(f.name));
   els.selRename.hidden = !edit || n !== 1;
   els.selDelete.hidden = !edit;
   els.selDelete.disabled = n === 0;
@@ -482,6 +491,27 @@ els.selAll.onclick = () => {
 els.selDownload.onclick = () => downloadFiles([...state.selected]);
 els.selDelete.onclick = () => deleteFiles([...state.selected]);
 els.selRename.onclick = () => renameFile([...state.selected][0]);
+els.selPrint.onclick = () => printFiles([...state.selected]);
+
+// ---- 印刷 ----
+
+function printFiles(names) {
+  const wanted = new Set(names);
+  const items = state.items
+    .filter((f) => wanted.has(f.name) && f.type === 'image')
+    .map((f) => ({ url: f.viewable ? fileUrl(f.name) : previewUrl(f), name: f.name, mtime: f.mtime }));
+  if (!items.length) {
+    toast('印刷できるのは写真だけです', { error: true });
+    return;
+  }
+  try {
+    sessionStorage.setItem('homealbum.printJob', JSON.stringify({ items }));
+  } catch {
+    toast('印刷の準備ができませんでした', { error: true });
+    return;
+  }
+  location.href = '/print.html';
+}
 
 // ---- ダウンロード ----
 
@@ -641,7 +671,7 @@ function showItem() {
   els.vPos.textContent = `${i + 1} / ${state.items.length}　${formatDate(f.mtime)}　${formatSize(f.size)}`;
   els.vPrev.style.visibility = i > 0 ? '' : 'hidden';
   els.vNext.style.visibility = i < state.items.length - 1 ? '' : 'hidden';
-  els.vDelete.hidden = !state.album.allowEdit;
+  els.vEdit.hidden = f.type !== 'image';
   els.vStage.innerHTML = '<div class="spinner"></div>';
 
   const unsupported = (msg) => {
@@ -683,14 +713,8 @@ function step(delta) {
 }
 
 els.vClose.innerHTML = icon('close');
-els.vGallery.innerHTML = icon('gallery');
-els.vGallery.onclick = () => {
-  const f = state.items[state.viewerIndex];
-  const startAt = { album: state.album.id, path: joinPath(state.path, f.name) };
-  closeViewer(true);
-  openGallery({ album: state.album.id, path: state.path, startAt }, { reuseHistory: true });
-};
-els.vDelete.innerHTML = icon('trash');
+els.vEdit.innerHTML = `${icon('wand')}<span class="label-optional">編集</span>`;
+els.vMore.innerHTML = icon('more');
 els.vDownload.innerHTML = `${icon('download')}<span class="label-optional">ダウンロード</span>`;
 els.vPrev.innerHTML = icon('chevL');
 els.vNext.innerHTML = icon('chevR');
@@ -698,7 +722,39 @@ els.vClose.onclick = () => closeViewer();
 els.vPrev.onclick = () => step(-1);
 els.vNext.onclick = () => step(1);
 els.vDownload.onclick = () => downloadFiles([state.items[state.viewerIndex].name]);
-els.vDelete.onclick = async () => {
+els.vEdit.onclick = () => {
+  const f = state.items[state.viewerIndex];
+  openEditor({
+    album: state.album.id, path: joinPath(state.path, f.name), name: f.name,
+    url: f.viewable ? fileUrl(f.name) : previewUrl(f),
+    allowUpload: state.album.allowUpload, allowEdit: state.album.allowEdit,
+  });
+};
+els.vMore.onclick = () => {
+  const f = state.items[state.viewerIndex];
+  const items = [{
+    label: 'ここからギャラリーで見る', icon: 'gallery', onClick: () => {
+      const startAt = { album: state.album.id, path: joinPath(state.path, f.name) };
+      closeViewer(true);
+      openGallery({ album: state.album.id, path: state.path, startAt }, { reuseHistory: true });
+    },
+  }];
+  if (f.type === 'image') items.push({ label: '印刷', icon: 'print', onClick: () => printFiles([f.name]) });
+  if (state.album.allowEdit) items.push({ label: '削除', icon: 'trash', danger: true, onClick: deleteCurrent });
+  showMenu(els.vMore, items);
+};
+
+// 編集画面で保存したら一覧を更新して、保存した写真を表示する
+async function onEditorSaved(name) {
+  await reloadAlbum();
+  const i = state.items.findIndex((f) => f.name === name);
+  if (els.viewer.hidden || i < 0) return;
+  state.viewerIndex = i;
+  while (state.rendered <= i) renderMore();
+  showItem();
+}
+
+async function deleteCurrent() {
   const i = state.viewerIndex;
   const name = state.items[i].name;
   if (await deleteFiles([name])) {
@@ -706,9 +762,10 @@ els.vDelete.onclick = async () => {
     state.viewerIndex = Math.min(i, state.items.length - 1);
     showItem();
   }
-};
+}
 
 document.addEventListener('keydown', (e) => {
+  if (!document.getElementById('editor').hidden) return;
   if (els.viewer.hidden || document.querySelector('dialog[open]')) {
     if (e.key === 'Escape' && state.selecting && !document.querySelector('dialog[open]')) exitSelection();
     return;
@@ -738,7 +795,8 @@ els.vStage.addEventListener('click', (e) => {
 });
 
 window.addEventListener('popstate', () => {
-  if (!els.viewer.hidden) closeViewer(true);
+  // 編集画面を閉じて戻ってきたときは、ビューアーは開いたままにする
+  if (!els.viewer.hidden && !history.state?.viewer) closeViewer(true);
 });
 window.addEventListener('hashchange', route);
 route();
