@@ -14,7 +14,45 @@
     <button class="btn" id="logoutBtn" hidden>ログアウト</button>
   </header>
   <main id="main"><div class="loading"><div class="spinner"></div></div></main>
-  <script src="common.js"></script>
-  <script src="admin.js"></script>
+  <div id="legacyNotice" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:#fff;color:#222;padding:32px 20px;font-size:16px;line-height:1.7;overflow:auto">
+    <h1 style="font-size:20px;margin:0 0 12px">このブラウザでは表示できません</h1>
+    <p style="margin:0 0 12px">お使いのブラウザが古いため、ホームアルバムを表示できませんでした。</p>
+    <p style="margin:0 0 12px">Fire タブレットの場合は、「設定」→「端末オプション」→「システムアップデート」で最新の状態にしてから、もう一度開いてください。</p>
+    <p style="margin:0 0 12px">ほかの端末の場合は、ブラウザ（Chrome・Safari など）を最新版にしてください。</p>
+    <p style="margin:0 0 4px;font-size:13px;color:#666">それでも表示できないときは、下の内容を写真に撮るなどして、管理している人に伝えてください。</p>
+    <pre id="legacyInfo" style="margin:0;padding:10px;background:#f2f2f2;border-radius:6px;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-all;color:#444"></pre>
+  </div>
+  <script>
+    window.__appOk = false;
+    window.__errs = [];
+    window.addEventListener('error', function (e) {
+      if (e.message && window.__errs.length < 3) {
+        window.__errs.push(e.message + ' (' + String(e.filename || '').split('/').pop() + ':' + e.lineno + ')');
+      }
+    });
+    window.addEventListener('load', function () {
+      if (window.__appOk) return;
+      document.getElementById('legacyInfo').textContent = 'ブラウザ: ' + navigator.userAgent
+        + '\n読み込み: ' + (window.__legacyJs ? '古いブラウザ用' : '通常')
+        + (window.__errs.length ? '\nエラー: ' + window.__errs.join('\n') : '');
+      document.getElementById('legacyNotice').style.display = 'block';
+    });
+  </script>
+  <script src="legacy.js"></script>
+  <script>
+    // 新しい書き方 (?. や ?? など) が使えないブラウザでは、古いブラウザ用に直したものを読む
+    (function () {
+      var modern = false;
+      try {
+        new Function('var o = {}; return [o?.a ?? 1_0, class { x = 1 }, async () => {}, { ...o }];');
+        modern = true;
+      } catch (e) { /* 古いブラウザ */ }
+      if (/[?&]legacy=1/.test(location.search)) modern = false; // 動作確認用
+      window.__legacyJs = !modern;
+      var dir = modern ? '' : 'legacy/';
+      var list = ["common.js", "admin.js"];
+      for (var i = 0; i < list.length; i++) document.write('<script src="' + dir + list[i] + '"><\/script>');
+    })();
+  </script>
 </body>
 </html>

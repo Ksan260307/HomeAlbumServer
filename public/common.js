@@ -175,3 +175,26 @@ function showMenu(anchor, items) {
   });
   menu.querySelector('button')?.focus();
 }
+
+// 文字をコピーする。navigator.clipboard は https でないと使えないため、
+// 使えないとき (このアプリは http) や古いブラウザでは昔からある方法でコピーする
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* 下の方法で試す */ }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  Object.assign(ta.style, { position: 'fixed', top: '0', left: '0', opacity: '0' });
+  // ダイアログを開いているときは、その中に置かないと選択できない
+  (document.querySelector('dialog[open]') || document.fullscreenElement || document.body).append(ta);
+  ta.select();
+  ta.setSelectionRange(0, text.length);
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch { ok = false; }
+  ta.remove();
+  return ok;
+}

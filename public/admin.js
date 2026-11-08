@@ -107,7 +107,7 @@ async function renderDashboard() {
 
     <section class="panel">
       <h2>パスワードの変更</h2>
-      <form id="pwForm" style="display:grid;gap:10px;max-width:360px;margin-top:10px">
+      <form id="pwForm" style="display:grid;grid-gap:10px;gap:10px;max-width:360px;margin-top:10px">
         <input class="input" id="curPw" type="password" placeholder="今のパスワード" autocomplete="current-password" required>
         <input class="input" id="newPw" type="password" placeholder="新しいパスワード（4文字以上）" autocomplete="new-password" required minlength="4">
         <button class="btn" type="submit">変更する</button>
@@ -121,12 +121,8 @@ async function renderDashboard() {
   const copyBtn = document.getElementById('copyBtn');
   if (copyBtn) {
     copyBtn.onclick = async () => {
-      try {
-        await navigator.clipboard.writeText(url);
-        toast('アドレスをコピーしました');
-      } catch {
-        toast('コピーできませんでした。アドレスを手で入力してください', { error: true });
-      }
+      if (await copyText(url)) toast('アドレスをコピーしました');
+      else toast('コピーできませんでした。アドレスを手で入力してください', { error: true });
     };
   }
   document.getElementById('pwForm').onsubmit = async (e) => {
@@ -157,7 +153,7 @@ function renderAlbums(albums) {
         <div class="path">${esc(a.path)}</div>
         ${a.exists ? '' : '<div class="warn">このフォルダが見つかりません（移動・削除された可能性があります）</div>'}
       </div>
-      <div style="display:grid;gap:6px">
+      <div style="display:grid;grid-gap:6px;gap:6px">
         <label class="switch" title="オンにすると、スマホなどから写真・動画をアップロードしたり、フォルダを作ったりできます">
           <input type="checkbox" data-act="allowUpload" ${a.allowUpload ? 'checked' : ''}>アップロードを許可
         </label>
@@ -223,7 +219,7 @@ function openQrPrint(url) {
   const prefs = { layout: 'large', title: 'ホームアルバム', wifi: '', ...loadQrPrefs() };
   const dlg = document.createElement('dialog');
   dlg.innerHTML = `
-    <form method="dialog" style="display:grid;gap:14px">
+    <form method="dialog" style="display:grid;grid-gap:14px;gap:14px">
       <div><h2>QRコードを印刷</h2><p style="margin:0">冷蔵庫や棚に貼っておくと、家族や来た人がスマホで読み取るだけでアルバムを開けます。</p></div>
       <div class="field"><label>印刷のしかた</label>
         <div class="seg" style="width:100%">
@@ -394,3 +390,4 @@ function openPicker() {
 }
 
 init();
+window.__appOk = true;

@@ -335,3 +335,4 @@ function start() {
 }
 
 start();
+window.__appOk = true;

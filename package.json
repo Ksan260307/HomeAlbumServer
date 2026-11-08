@@ -18,6 +18,7 @@
   "license": "ISC",
   "dependencies": {
     "busboy": "^1.6.0",
+    "esbuild": "^0.28.2",
     "express": "^4.22.3",
     "heic-decode": "^2.1.0",
     "qrcode": "^1.5.4",

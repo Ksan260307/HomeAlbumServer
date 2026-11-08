@@ -904,3 +904,4 @@ if (startParams.get('open')) {
   history.replaceState(null, '', location.pathname + location.hash);
 }
 route();
+window.__appOk = true;

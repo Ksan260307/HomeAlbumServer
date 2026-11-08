@@ -1081,10 +1081,9 @@ function showQrDialog({ title, message, url }) {
   document.body.append(dlg);
   const input = dlg.querySelector('input');
   dlg.querySelector('[data-copy]').onclick = async () => {
-    try {
-      await navigator.clipboard.writeText(url);
+    if (await copyText(url)) {
       toast('コピーしました');
-    } catch {
+    } else {
       input.select();
       toast('選んだ文字をコピーしてください');
     }

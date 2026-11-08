@@ -43,7 +43,8 @@ const ASPECTS = [
 ];
 
 const PREVIEW_MAX = 1600;
-const EXPORT_MAX_PIXELS = 16_000_000; // スマホのブラウザで扱えるキャンバスの上限に合わせる
+// スマホのブラウザで扱えるキャンバスの上限に合わせる (メモリの少ない古いタブレットではさらに小さく)
+const EXPORT_MAX_PIXELS = navigator.deviceMemory && navigator.deviceMemory <= 2 ? 8_000_000 : 16_000_000;
 
 const ed = {
   el: $('editor'), stage: $('eStage'), wrap: $('eWrap'), canvas: $('eCanvas'), crop: $('eCrop'),

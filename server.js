@@ -425,6 +425,33 @@ app.post('/api/save-edit', express.raw({ type: 'image/*', limit: '300mb' }), asy
 
 app.use('/api', (req, res) => res.status(404).json({ error: '見つかりません' }));
 
+// 古いブラウザ (Fire タブレットの古い Silk など) 向けに、画面のプログラムを古い書き方に直して渡す
+// 新しいブラウザは public/ のファイルをそのまま使う
+const legacyCache = new Map();
+app.get('/legacy/:name', async (req, res) => {
+  const name = req.params.name;
+  if (!/^[a-z-]+\.js$/.test(name)) return res.status(404).end();
+  const src = path.join(__dirname, 'public', name);
+  try {
+    const st = await fsp.stat(src);
+    const key = `${st.mtimeMs}-${st.size}`;
+    let hit = legacyCache.get(name);
+    if (!hit || hit.key !== key) {
+      const code = await fsp.readFile(src, 'utf8');
+      const out = await require('esbuild').transform(code, { target: 'es2015', loader: 'js', charset: 'utf8' });
+      hit = { key, code: out.code };
+      legacyCache.set(name, hit);
+    }
+    res.type('application/javascript; charset=utf-8');
+    res.set('Cache-Control', 'no-cache');
+    res.send(hit.code);
+  } catch (e) {
+    if (e.code === 'ENOENT') return res.status(404).end();
+    console.error('古いブラウザ向けの変換に失敗しました:', name, e.message);
+    res.status(500).end();
+  }
+});
+
 app.use(express.static(path.join(__dirname, 'public'), { extensions: ['html'], index: 'index.html' }));
 
 // ---- 起動 ----

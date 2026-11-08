@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ホームアルバム</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="lite.css">
+</head>
+<body>
+  <!-- 古いブラウザ (Fire タブレットの Silk 3 など) 向けの、見るだけのかんたん版 -->
+  <header class="bar">
+    <a class="btn back" id="backBtn" href="#/" hidden>‹ 戻る</a>
+    <h1 id="title">ホームアルバム</h1>
+    <button class="btn" id="slideBtn" type="button" hidden>▶ スライドショー</button>
+  </header>
+  <main id="main"><p class="msg">読み込み中…</p></main>
+
+  <div id="viewer" class="viewer" hidden>
+    <div id="vStage" class="v-stage"></div>
+    <div class="v-top ui">
+      <button class="btn dark" id="vClose" type="button">✕ 閉じる</button>
+      <span class="v-name" id="vName"></span>
+      <span class="v-count" id="vCount"></span>
+    </div>
+    <button class="v-nav v-prev ui" id="vPrev" type="button" aria-label="前へ">‹</button>
+    <button class="v-nav v-next ui" id="vNext" type="button" aria-label="次へ">›</button>
+    <div class="v-bottom ui">
+      <a class="btn dark" id="vDl" href="#">⬇ ダウンロード</a>
+      <button class="btn dark" id="vSlide" type="button">▶ ここからスライドショー</button>
+    </div>
+  </div>
+
+  <div id="slideSetup" class="sheet-wrap" hidden>
+    <div class="sheet">
+      <h2>スライドショー</h2>
+      <label class="field">切り替えの間隔
+        <select id="ssInterval">
+          <option value="5">5秒</option>
+          <option value="10">10秒</option>
+          <option value="20">20秒</option>
+          <option value="30">30秒</option>
+          <option value="60">1分</option>
+          <option value="300">5分</option>
+        </select>
+      </label>
+      <label class="field">順番
+        <select id="ssOrder">
+          <option value="name">名前の順</option>
+          <option value="shuffle">シャッフル</option>
+        </select>
+      </label>
+      <label class="check"><input type="checkbox" id="ssSub"> 中のフォルダの写真も流す</label>
+      <div class="actions">
+        <button class="btn" id="ssCancel" type="button">やめる</button>
+        <button class="btn primary" id="ssStart" type="button">はじめる</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="slide" class="slide" hidden>
+    <img class="s-img" id="sA" alt="">
+    <img class="s-img" id="sB" alt="">
+    <div class="s-ui ui">
+      <button class="btn dark" id="sClose" type="button">✕ 終了</button>
+      <button class="btn dark" id="sPause" type="button">Ⅱ 一時停止</button>
+      <button class="btn dark" id="sFull" type="button">全画面</button>
+      <span class="s-info" id="sInfo"></span>
+    </div>
+  </div>
+
+  <script src="lite.js"></script>
+</body>
+</html>
