@@ -22,7 +22,7 @@ const GALLERY_DEFAULTS = {
   clock: false, clock24: true, clockLarge: false, today: false, photoDate: false, yearsAgo: false, fileName: false,
   folderName: false, counter: false, progress: true, nextPreview: false, strip: true, infoPos: 'bl', infoSize: 'm',
   order: 'folder', recursive: true, orientation: 'all', period: 'all', loop: true, randomStart: false,
-  includeVideos: false, videoToEnd: true, videoSound: false, videoMax: 0,
+  includeVideos: false, videoSound: false,
   bgmVolume: 60, bgmPauseWithSlides: true,
   tapZones: true, wheel: true, uiHideDelay: 3,
   sleepMinutes: 0, nightDim: false, nightStart: 22, nightEnd: 6, brightness: 100, autoRefresh: false,
@@ -99,9 +99,7 @@ const GALLERY_SCHEMA = [
   ] },
   { title: '動画', items: [
     G('includeVideos', '動画も表示する', 'toggle'),
-    G('videoToEnd', '動画は最後まで再生してから次へ', 'toggle'),
     G('videoSound', '動画の音を出す', 'toggle'),
-    G('videoMax', '動画を再生する長さ', 'select', { options: [[0, '制限なし'], [10, '10秒まで'], [30, '30秒まで'], [60, '1分まで'], [180, '3分まで']], num: true }),
   ] },
   { title: '音楽（BGM）', custom: 'bgm', items: [
     G('bgmVolume', '音量', 'range', { min: 0, max: 100, step: 5, unit: '%' }),
@@ -641,8 +639,13 @@ function buildFigure({ item, meta, media }, cell) {
     v.muted = !s.videoSound;
     v.preload = 'auto';
     v.src = gFileUrl(item);
+    // 動画は切り替えの間隔に関係なく、最後まで再生してから次へ進む
     v.addEventListener('ended', () => {
-      if (gal.open && gal.s.videoToEnd && gal.current[0]?.item === item) goNext(true);
+      if (gal.open && gal.playing && gal.current[0]?.item === item) goNext(true);
+    });
+    // 再生できない動画は飛ばす
+    v.addEventListener('error', () => {
+      if (gal.open && gal.playing && gal.current[0]?.item === item && v.getAttribute('src')) goNext(true);
     });
     motion.append(v);
   } else {
@@ -773,21 +776,29 @@ function reshow() {
 
 // ---- 進む・戻る ----
 
+const VIDEO_START_WAIT = 30; // 動画の再生が始まるのを待つ秒数
+
 function schedule() {
   clearTimeout(gal.timer);
   resetProgress();
   if (!gal.playing || !gal.open || gal.order.length < 2 || gal.zoomed) return;
   const cur = gal.current;
   const video = cur.length === 1 && cur[0].item.type === 'video';
-  let secs = gal.s.interval;
+  const secs = gal.s.interval;
   if (video) {
-    const max = gal.s.videoMax;
-    if (gal.s.videoToEnd) {
-      // 最後まで再生すると次へ進む (長さの上限があればそこで次へ)
-      if (max) gal.timer = setTimeout(() => goNext(true), max * 1000);
+    // 動画は切り替えの間隔に関係なく、最後まで再生すると (ended で) 次へ進む
+    const v = gal.layers[gal.front]?.querySelector('video');
+    // 一時停止しているあいだに終わっていたら、再開したときに次へ
+    if (v && (v.ended || v.error)) {
+      gal.timer = setTimeout(() => goNext(true), 300);
       return;
     }
-    if (max) secs = Math.min(secs, max);
+    // 再生が始まらない動画 (端末で再生できない形式など) は、しばらく待って次へ
+    gal.timer = setTimeout(() => {
+      const el = gal.layers[gal.front]?.querySelector('video');
+      if (el && el.currentTime === 0) goNext(true);
+    }, VIDEO_START_WAIT * 1000);
+    return;
   }
   startProgress(secs);
   gal.timer = setTimeout(() => goNext(true), secs * 1000);
@@ -1296,7 +1307,7 @@ function afterSettingsChange(keys) {
   updateInfo();
   updateStrip();
   updateNextPreview();
-  if (keys.includes('interval') || keys.includes('progress') || keys.includes('videoToEnd') || keys.includes('videoMax')) schedule();
+  if (keys.includes('interval') || keys.includes('progress') || keys.includes('includeVideos')) schedule();
   if (keys.includes('videoSound')) {
     gal.layers[gal.front].querySelectorAll('video').forEach((v) => { v.muted = !gal.s.videoSound; });
     bgmDuck(gal.s.videoSound && !!gal.layers[gal.front].querySelector('video'));
