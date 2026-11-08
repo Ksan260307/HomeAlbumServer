@@ -120,11 +120,17 @@ async function renderHome() {
       </div>`;
     return;
   }
-  els.main.innerHTML = `<div class="cards">${albums.map((a) => `
+  els.main.innerHTML = `
+    <div class="home-actions">
+      <button class="btn primary" id="allSlideBtn" type="button">${icon('gallery')}<span>すべての写真でスライドショー</span></button>
+    </div>
+    <div class="cards">${albums.map((a) => `
     <a class="card" href="${albumHash(a.id)}">
       <div class="cover">${icon('folder')}<img alt="" loading="lazy" src="/api/cover?${qs({ album: a.id, path: '' })}" onerror="this.remove()"></div>
       <div class="name">${esc(a.name)}</div>
     </a>`).join('')}</div>`;
+  // すべてのアルバムの写真を、中のフォルダも含めてギャラリーモードで流す
+  $('allSlideBtn').onclick = () => openGallery({ album: 'all', path: '' });
 }
 
 // ---- フォルダの中身 ----

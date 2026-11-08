@@ -31,7 +31,9 @@ button, select { font: inherit; }
 }
 main { padding: 72px 8px 24px; }
 .msg { text-align: center; color: #6b6b70; padding: 40px 16px; }
-.section { font-size: 14px; color: #6b6b70; font-weight: 700; margin: 14px 6px 6px; }
+.home-actions { margin: 4px 6px 10px; }
+.home-actions .btn { padding: 12px 20px; font-size: 17px; }
+.section {font-size: 14px; color: #6b6b70; font-weight: 700; margin: 14px 6px 6px; }
 
 /* ---- アルバム・フォルダのカード (幅は % で並べる) ---- */
 .cards { font-size: 0; }

@@ -109,16 +109,20 @@
   // ---- アルバムの一覧 ----
   function showHome() {
     state.album = null;
+    state.path = '';
+    state.files = [];
     setBar('ホームアルバム', '', false);
     showMessage('読み込み中…');
     getJSON('/api/albums', function (albums) {
       if (!albums.length) return showMessage('まだアルバムがありません。サーバーのPCの管理画面でフォルダを登録してください。');
-      var html = '<div class="cards">';
+      var html = '<div class="home-actions"><button class="btn primary" id="allSlide" type="button">▶ すべての写真でスライドショー</button></div>'
+        + '<div class="cards">';
       for (var i = 0; i < albums.length; i++) {
         var a = albums[i];
         html += card(folderHash(a.id, ''), a.name, '/api/cover?' + qs({ album: a.id, path: '' }));
       }
       $('main').innerHTML = html + '</div>';
+      $('allSlide').onclick = function () { openSlideSetup(0); };
       window.scrollTo(0, 0);
     }, showMessage);
   }
@@ -308,23 +312,29 @@
     $('ssInterval').value = String(saved.interval || 10);
     $('ssOrder').value = saved.order || 'name';
     $('ssSub').checked = !!saved.sub;
-    $('ssSub').parentNode.hidden = viewer.open; // 1枚表示からはこのフォルダだけ
+    // 1枚表示からはこのフォルダだけ、トップ画面からは全アルバムの全フォルダ
+    $('ssSub').parentNode.hidden = viewer.open || !state.album;
+    $('ssTitle').textContent = state.album ? 'スライドショー' : 'すべての写真でスライドショー';
     $('slideSetup').hidden = false;
   }
 
   $('slideBtn').onclick = function () { openSlideSetup(0); };
   $('ssCancel').onclick = function () { $('slideSetup').hidden = true; };
   $('ssStart').onclick = function () {
-    var opts = { interval: Number($('ssInterval').value), order: $('ssOrder').value, sub: $('ssSub').checked && !viewer.open };
+    var opts = { interval: Number($('ssInterval').value), order: $('ssOrder').value, sub: $('ssSub').checked };
     store('slide', opts);
     $('slideSetup').hidden = true;
-    if (opts.sub) {
+    var all = !state.album;
+    if (all || (opts.sub && !viewer.open)) {
       showMessageInSlide('写真を集めています…');
-      getJSON('/api/gallery?' + qs({ album: state.album, path: state.path, recursive: 1 }), function (data) {
+      var query = all ? { album: 'all', recursive: 1 } : { album: state.album, path: state.path, recursive: 1 };
+      getJSON('/api/gallery?' + qs(query), function (data) {
         var list = [];
+        var names = data.albums || {};
         for (var i = 0; i < data.items.length; i++) {
           var it = data.items[i];
-          if (it.type === 'image') list.push({ album: it.album, path: it.path, v: it.mtime + '-' + it.size, name: it.path });
+          if (it.type !== 'image') continue;
+          list.push({ album: it.album, path: it.path, v: it.mtime + '-' + it.size, name: all ? (names[it.album] || '') + ' / ' + it.path : it.path });
         }
         startSlide(list, 0, opts);
       }, function (msg) { stopSlide(false); alert(msg); });
