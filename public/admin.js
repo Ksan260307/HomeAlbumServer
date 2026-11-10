@@ -306,56 +306,92 @@ window.addEventListener('afterprint', () => {
 });
 
 // ---- フォルダ選択ダイアログ ----
+// チェックを入れたフォルダをまとめて追加できる。フォルダの場所を入力して開くこともできる
+// すでに登録されているフォルダは選べない (サーバー側でも除く)
 
 function openPicker() {
   const dlg = document.createElement('dialog');
   dlg.className = 'picker';
   dlg.innerHTML = `
     <form method="dialog">
-      <div class="p-head"><h2>フォルダを選ぶ</h2><p style="margin:0">表示したい写真や動画が入っているフォルダを開いて、「このフォルダを追加」を押してください。</p></div>
-      <div class="p-path"><button class="btn icon" type="button" id="pUp" title="ひとつ上へ" aria-label="ひとつ上へ">${icon('back')}</button><span id="pPath"></span></div>
+      <div class="p-head"><h2>フォルダを選ぶ</h2><p style="margin:0">追加したいフォルダにチェックを入れてください（いくつでも選べます）。フォルダの名前を押すと中を開きます。</p></div>
+      <div class="p-path">
+        <button class="btn icon" type="button" id="pUp" title="ひとつ上へ" aria-label="ひとつ上へ">${icon('back')}</button>
+        <input class="input p-input" id="pPathInput" placeholder="フォルダの場所を入力（例: D:\\写真）" spellcheck="false" autocomplete="off" aria-label="フォルダの場所">
+        <button class="btn" type="button" id="pGo">開く</button>
+      </div>
+      <div class="p-here" id="pHere" hidden></div>
       <div class="p-list" id="pList"></div>
       <div class="p-foot">
-        <div class="field"><label for="pName">アルバムに表示する名前</label><input class="input" id="pName" autocomplete="off"></div>
+        <div class="p-selected" id="pSelected"></div>
+        <div class="field" id="pNameField" hidden><label for="pName">アルバムに表示する名前</label><input class="input" id="pName" autocomplete="off"></div>
         <label class="switch"><input type="checkbox" id="pUpload">スマホなどからのアップロードを許可する</label>
         <label class="switch"><input type="checkbox" id="pEdit">スマホなどからの削除・名前変更を許可する</label>
         <div class="actions">
           <button class="btn" value="cancel">キャンセル</button>
-          <button class="btn primary" type="button" id="pAdd" disabled>このフォルダを追加</button>
+          <button class="btn primary" type="button" id="pAdd" disabled>追加する</button>
         </div>
       </div>
     </form>`;
   document.body.append(dlg);
   dlg.addEventListener('close', () => dlg.remove());
-  const pList = dlg.querySelector('#pList');
-  const pPath = dlg.querySelector('#pPath');
-  const pName = dlg.querySelector('#pName');
-  const pUp = dlg.querySelector('#pUp');
-  const pAdd = dlg.querySelector('#pAdd');
+  const $p = (id) => dlg.querySelector(`#${id}`);
+  const pList = $p('pList');
+  const pInput = $p('pPathInput');
+  const pHere = $p('pHere');
+  const pUp = $p('pUp');
+  const pAdd = $p('pAdd');
+  const pName = $p('pName');
   let current = { path: '', parent: null };
-  let nameTouched = false;
-  pName.oninput = () => { nameTouched = true; };
+  // 選んだフォルダ: 場所 → アルバムに表示する名前
+  const selected = new Map();
+  const baseName = (p) => p.split(/[\\/]/).filter(Boolean).pop() || p;
 
-  const item = (iconName, label, target) =>
-    `<button class="p-item" type="button" data-path="${esc(target)}">${icon(iconName)}<span>${esc(label)}</span></button>`;
+  const badge = '<span class="p-badge">登録済み</span>';
+  const row = (iconName, label, target, { registered = false, checkable = true } = {}) => `
+    <div class="p-row${registered ? ' is-registered' : ''}">
+      ${checkable ? `<input type="checkbox" class="p-check" data-path="${esc(target)}" aria-label="${esc(label)} を選ぶ"${registered ? ' disabled' : ''}${selected.has(target) ? ' checked' : ''}>` : '<span class="p-check-space"></span>'}
+      <button class="p-item" type="button" data-path="${esc(target)}">${icon(iconName)}<span>${esc(label)}</span></button>
+      ${registered ? badge : ''}
+    </div>`;
+
+  function renderSelected() {
+    const n = selected.size;
+    pAdd.disabled = !n;
+    pAdd.textContent = n ? `追加する（${n}件）` : '追加する';
+    const sel = $p('pSelected');
+    sel.innerHTML = n ? `<div class="p-group">選んだフォルダ（${n}）</div>` + [...selected.keys()].map((p) => `
+      <div class="p-chip"><span title="${esc(p)}"><b>${esc(baseName(p))}</b><small>${esc(p)}</small></span><button type="button" class="btn icon" data-remove="${esc(p)}" title="選ぶのをやめる" aria-label="選ぶのをやめる">${icon('close')}</button></div>`).join('') : '';
+    // 1件だけのときは、アルバムに表示する名前を変えられる
+    $p('pNameField').hidden = n !== 1;
+    if (n === 1) pName.value = [...selected.values()][0];
+  }
+
+  function toggle(target, on) {
+    if (on) selected.set(target, baseName(target));
+    else selected.delete(target);
+    // 同じフォルダのチェック (一覧と「このフォルダを選ぶ」) をそろえる
+    dlg.querySelectorAll('.p-check').forEach((c) => { if (c.dataset.path === target) c.checked = on; });
+    renderSelected();
+  }
 
   async function go(target) {
     try {
       const r = await api(`/api/admin/browse?path=${encodeURIComponent(target)}`);
       current = r;
-      pPath.textContent = r.path || 'よく使う場所';
+      pInput.value = r.path;
       pUp.disabled = r.parent === null;
-      pAdd.disabled = !r.path;
-      if (!nameTouched) pName.value = r.path ? (r.path.split(/[\\/]/).filter(Boolean).pop() || r.path) : '';
       if (!r.path) {
+        pHere.hidden = true;
         pList.innerHTML = `
-          <div class="p-group">よく使う場所</div>${r.shortcuts.map((s) => item('folder', s.label, s.path)).join('')}
-          <div class="p-group">ドライブ</div>${r.drives.map((d) => item('drive', d.label, d.path)).join('')}`;
-      } else if (!r.dirs.length) {
-        pList.innerHTML = '<div class="p-empty">この中にフォルダはありません。</div>';
+          <div class="p-group">よく使う場所</div>${r.shortcuts.map((s) => row('folder', s.label, s.path, { registered: s.registered })).join('')}
+          <div class="p-group">ドライブ</div>${r.drives.map((d) => row('drive', d.label, d.path, { checkable: false })).join('')}`;
       } else {
-        const sep = r.path.endsWith('\\') || r.path.endsWith('/') ? '' : (r.path.includes('\\') ? '\\' : '/');
-        pList.innerHTML = r.dirs.map((d) => item('folder', d, r.path + sep + d)).join('');
+        pHere.hidden = false;
+        pHere.innerHTML = `<label class="p-here-label"><input type="checkbox" class="p-check" data-path="${esc(r.path)}"${r.registered ? ' disabled' : ''}${selected.has(r.path) ? ' checked' : ''}>このフォルダを選ぶ</label>${r.registered ? badge : ''}`;
+        pList.innerHTML = r.dirs.length
+          ? r.dirs.map((d) => row('folder', d.name, d.path, { registered: d.registered })).join('')
+          : '<div class="p-empty">この中にフォルダはありません。</div>';
       }
       pList.scrollTop = 0;
     } catch (e) {
@@ -363,28 +399,53 @@ function openPicker() {
     }
   }
 
+  const goTyped = () => {
+    const v = pInput.value.trim().replace(/^"(.*)"$/, '$1');
+    if (v) go(v);
+  };
+  // Enter で開く (フォームが送信されてダイアログが閉じないようにする)
+  pInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); goTyped(); }
+  });
+  $p('pGo').onclick = goTyped;
+
+  dlg.addEventListener('change', (e) => {
+    if (e.target.classList.contains('p-check')) toggle(e.target.dataset.path, e.target.checked);
+  });
   pList.onclick = (e) => {
     const b = e.target.closest('.p-item');
     if (b) go(b.dataset.path);
+  };
+  $p('pSelected').onclick = (e) => {
+    const b = e.target.closest('[data-remove]');
+    if (b) toggle(b.dataset.remove, false);
+  };
+  pName.oninput = () => {
+    if (selected.size === 1) selected.set([...selected.keys()][0], pName.value);
   };
   pUp.onclick = () => { if (current.parent !== null) go(current.parent); };
   pAdd.onclick = async () => {
     try {
       const r = await api('/api/admin/albums', {
         method: 'POST',
-        json: { path: current.path, name: pName.value.trim(),
-          allowUpload: dlg.querySelector('#pUpload').checked,
-          allowEdit: dlg.querySelector('#pEdit').checked,
+        json: {
+          items: [...selected].map(([p, name]) => ({ path: p, name: name.trim() })),
+          allowUpload: $p('pUpload').checked,
+          allowEdit: $p('pEdit').checked,
         },
       });
       dlg.close();
       renderAlbums(r.albums);
-      toast('フォルダを追加しました');
+      const reg = r.skipped.filter((x) => x.reason === 'registered').length;
+      const missing = r.skipped.length - reg;
+      const notes = [reg && `${reg}件は登録済みのため除きました`, missing && `${missing}件は見つかりませんでした`].filter(Boolean);
+      toast(`${r.added.length}件のフォルダを追加しました${notes.length ? `（${notes.join('、')}）` : ''}`, { duration: notes.length ? 5000 : undefined });
     } catch (e) {
       toast(e.message, { error: true });
     }
   };
 
+  renderSelected();
   dlg.showModal();
   go('');
 }
